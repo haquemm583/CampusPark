@@ -1,20 +1,41 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const width = 400
 const height = 470
 const driveTime = 16_000
-const layouts = {
+const simulatedSpaces = Array.from({ length: 8 }, (_, column) => 88 + column * 32)
+const legacyLayouts = {
   Tarpon: { lane: 212, entrance: 72, spaces: [188, 240, 292] },
   'Sea Horse': { lane: 180, entrance: 326, spaces: [224, 172] },
   Hammerhead: { lane: 240, entrance: 85, spaces: [204, 256] },
-  'Rec Field': { lane: 198, entrance: 318, spaces: [216] },
 }
 
-function drawMap(canvas, layout, route, activeSpace) {
+function aisleLayout(spot) {
+  const layout = spot.road ? {
+    lane: 168 + (spot.row % 4) * 23,
+    entrance: spot.row % 2 === 0 ? 54 : 346,
+    spaces: simulatedSpaces,
+  } : legacyLayouts[spot.lot] ?? legacyLayouts.Tarpon
+  return {
+    ...layout,
+    aisle: spot.aisle,
+    road: spot.road,
+    spaceWidth: spot.road ? 32 : 13,
+  }
+}
+
+function routePoints({ entrance, lane, spaces }, column) {
+  const stall = spaces[column]
+  return [[entrance, 388], [entrance, lane], [stall, lane], [stall, lane - 48]]
+}
+
+function drawMap(canvas, layout, route, top, highContrast) {
   const context = canvas.getContext('2d')
   const theme = getComputedStyle(canvas)
-  context.setTransform(2, 0, 0, 2, 0, 0)
+  const labelSize = Number.parseFloat(theme.fontSize) * (highContrast ? .875 : .75)
+  context.setTransform(2, 0, 0, 2, 0, -top * 2)
   const { lane, entrance, spaces } = layout
+  const [activeSpace] = route.at(-1)
   const rect = (color, x, y, w, h) => {
     context.fillStyle = color
     context.fillRect(x, y, w, h)
@@ -28,14 +49,14 @@ function drawMap(canvas, layout, route, activeSpace) {
     context.lineCap = 'round'
     context.stroke()
   }
-  const label = (text, x, y, color = '#546579') => {
-    context.font = '600 12px system-ui'
+  const label = (text, x, y) => {
+    context.font = `${highContrast ? 700 : 600} ${labelSize}px system-ui`
     context.textAlign = 'center'
-    context.fillStyle = color
+    context.fillStyle = highContrast ? '#000' : '#546579'
     context.fillText(text, x, y)
   }
   const road = (points, size) => {
-    line(points, '#d5dcd9', size + 3)
+    line(points, highContrast ? '#555' : '#d5dcd9', size + 3)
     line(points, '#fff', size)
   }
   rect('#e9eee8', 0, 0, width, height)
@@ -56,95 +77,164 @@ function drawMap(canvas, layout, route, activeSpace) {
   road([[0, 391], [104, 388], [293, 388], [400, 373]], 38)
   road([[entrance, 388], [entrance, lane]], 31)
   road([[54, lane], [346, lane]], 39)
-  const bankStart = Math.min(...spaces) - 40
-  const bankEnd = Math.max(...spaces) + 40
+  const bankStart = Math.min(...spaces) - 16
+  const bankEnd = Math.max(...spaces) + 16
   rect('#e2e6e5', bankStart, lane - 58, bankEnd - bankStart, 38)
   rect('#e2e6e5', bankStart, lane + 20, bankEnd - bankStart, 38)
-  for (let x = bankStart + 4; x < bankEnd; x += 13) {
-    rect('#fff', x, lane - 53, 1, 32)
-    rect('#fff', x, lane + 21, 1, 32)
+  for (let x = bankStart; x <= bankEnd; x += layout.spaceWidth) {
+    rect(highContrast ? '#555' : '#fff', x, lane - 53, 1, 32)
+    rect(highContrast ? '#555' : '#fff', x, lane + 21, 1, 32)
   }
-  rect('#b9dafa', activeSpace - 10, lane - 57, 20, 36)
+  if (highContrast) rect('#000', activeSpace - 12, lane - 59, 24, 40)
+  rect(highContrast ? '#ffdc4c' : '#b9dafa', activeSpace - 10, lane - 57, 20, 36)
   for (const [x, y] of [[22, 141], [36, 159], [19, 177], [361, 140], [368, 160], [28, 333], [44, 340], [348, 431], [366, 445], [72, 438], [90, 451]]) {
     context.beginPath()
     context.arc(x, y, 5, 0, Math.PI * 2)
     context.fillStyle = '#bfd8b6'
     context.fill()
   }
-  label('Aisle ' + layout.aisle, 200, lane + 83)
-  label('Lot access road', 200, 409)
+  label('Aisle ' + layout.aisle, 200, lane + 75)
+  label('Lot entrance', entrance, 420)
+  label(layout.road ?? 'Lot access road', 200, 447)
+  const blue = theme.getPropertyValue('--blue').trim()
+  const deepBlue = theme.getPropertyValue('--deep-blue').trim()
   line(route, '#fff', 16)
-  line(route, theme.getPropertyValue('--deep-blue').trim(), 11)
-  line(route, theme.getPropertyValue('--blue').trim(), 7)
+  line(route, deepBlue, 11)
+  line(route, blue, 7)
+  if (!top) {
+    const [x, y] = route[0]
+    context.beginPath()
+    context.arc(x, y, 5, 0, Math.PI * 2)
+    context.fillStyle = '#fff'
+    context.fill()
+    context.lineWidth = 2
+    context.strokeStyle = deepBlue
+    context.stroke()
+  }
 }
 
-export default function LotNavigation({ spot, solidSurfaces, onOccupied, onEnd, onPark }) {
+function LotMap({ spot, highContrast, textSize, preview = false, children }) {
   const canvas = useRef(null)
+  const layout = useMemo(() => aisleLayout(spot), [spot])
+  const route = useMemo(() => routePoints(layout, spot.column), [layout, spot.column])
+  const [stallX, stallY] = route.at(-1)
+  const lotName = spot.road ? spot.lot : `${spot.lot} Lot`
+  const top = preview ? layout.lane - 96 : 0
+  const mapHeight = preview ? 180 : height
+
+  useEffect(() => {
+    drawMap(canvas.current, layout, route, top, highContrast)
+  }, [layout, route, top, highContrast, textSize])
+
+  return <div className={preview ? 'lot-map parking-map-preview' : 'lot-map'} role="img"
+    style={{ aspectRatio: `${width} / ${mapHeight}` }}
+    aria-label={`Route from the lot entrance through aisle ${spot.aisle} to parking spot ${spot.id} in ${lotName}`}>
+    <canvas ref={canvas} width={width * 2} height={mapHeight * 2} aria-hidden="true" />
+    <span className="stall-pin" style={{ left: `${stallX / width * 100}%`, top: `${(stallY - top) / mapHeight * 100}%` }}><b>P</b>{spot.id}</span>
+    {children}
+  </div>
+}
+
+export function ParkingMapPreview({ spot, highContrast, textSize }) {
+  return <LotMap spot={spot} highContrast={highContrast} textSize={textSize} preview />
+}
+
+export default function LotNavigation({ spot, course, solidSurfaces, highContrast, textSize, motion, directionsOnly, onEnd, onPark }) {
   const turn = useRef(null)
-  const [elapsed, setElapsed] = useState(0)
-  const [paused, setPaused] = useState(false)
-  const layout = layouts[spot.lot] ?? layouts.Tarpon
-  const { lane, entrance, spaces } = layout
-  const stall = spaces[spot.column]
-  const corners = [[entrance, 388], [entrance, lane], [stall, lane]]
-  const segments = [388 - lane, Math.abs(stall - entrance), 48]
-  const total = segments.reduce((sum, length) => sum + length, 0)
-  const arrived = elapsed >= driveTime
-  const travelled = total * elapsed / driveTime
-  const step = travelled < segments[0] ? 0 : travelled < segments[0] + segments[1] ? 1 : 2
+  const marker = useRef(null)
+  const elapsed = useRef(0)
+  const [{ seconds, animatedStep }, setDriveStatus] = useState({ seconds: driveTime / 1000, animatedStep: 0 })
+  const [manualStep, setManualStep] = useState(0)
+  const [systemReducedMotion, setSystemReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const manual = directionsOnly || motion === 'reduce' || (motion === 'system' && systemReducedMotion)
+  const lotName = spot.road ? spot.lot : `${spot.lot} Lot`
+  const route = useMemo(() => routePoints(aisleLayout(spot), spot.column), [spot])
+  const [[entrance, startY], [, lane], [stall], [, stallY]] = route
+  const arrived = !manual && seconds === 0
+  const step = manual ? manualStep : animatedStep
   const direction = stall > entrance ? 1 : -1
-  const turns = [entrance < stall ? 'Turn right' : 'Turn left', entrance < stall ? 'Turn left' : 'Turn right']
-  const positions = [
-    [entrance, 388 - travelled, 0],
-    [entrance + direction * (travelled - segments[0]), lane, direction * 90],
-    [stall, lane - (travelled - segments[0] - segments[1]), 0],
+  const instructions = [
+    [direction === 1 ? '↱' : '↰', `Turn ${direction === 1 ? 'right' : 'left'} at aisle ${spot.aisle}`],
+    [direction === 1 ? '↰' : '↱', `Turn ${direction === 1 ? 'left' : 'right'} into ${spot.id}`],
+    ['↑', `Pull into spot ${spot.id}`],
   ]
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const [x, y, heading] = reducedMotion && !arrived ? [...corners[step], positions[step][2]] : positions[step]
+  const [arrow, instruction] = arrived ? ['✓', `Arrived at ${spot.id}`] : instructions[step]
+
+  useEffect(() => { turn.current.focus() }, [spot.id])
 
   useEffect(() => {
-    drawMap(canvas.current, { ...layout, aisle: spot.aisle }, [[entrance, 388], [entrance, lane], [stall, lane], [stall, lane - 48]], stall)
-    turn.current.focus()
-  }, [layout, entrance, lane, stall, spot.aisle])
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const syncPreference = () => setSystemReducedMotion(preference.matches)
+    preference.addEventListener('change', syncPreference)
+    syncPreference()
+    return () => preference.removeEventListener('change', syncPreference)
+  }, [])
 
   useEffect(() => {
-    if (paused || arrived) return
-    let last = performance.now()
-    const timer = setInterval(() => {
-      const now = performance.now()
-      const delta = now - last
-      last = now
-      setElapsed(value => Math.min(driveTime, value + delta))
-    }, 100)
-    return () => clearInterval(timer)
-  }, [paused, arrived])
+    if (manual || arrived) return
+    const firstTurn = startY - lane
+    const secondTurn = firstTurn + Math.abs(stall - entrance)
+    const total = secondTurn + lane - stallY
+    const startedAt = performance.now() - elapsed.current
+    let lastSeconds
+    let lastStep
+    function animate(now) {
+      if (!marker.current) return
+      elapsed.current = Math.min(driveTime, Math.max(0, now - startedAt))
+      const distance = total * elapsed.current / driveTime
+      const step = distance < firstTurn ? 0 : distance < secondTurn ? 1 : 2
+      const remaining = Math.ceil((driveTime - elapsed.current) / 1000)
+      const x = entrance + direction * Math.min(Math.max(0, distance - firstTurn), secondTurn - firstTurn)
+      const y = startY - Math.min(distance, firstTurn) - Math.max(0, distance - secondTurn)
+      marker.current.style.translate = `${x / width * 100}% ${y / height * 100}%`
+      if (remaining !== lastSeconds || step !== lastStep) {
+        lastSeconds = remaining
+        lastStep = step
+        setDriveStatus({ seconds: remaining, animatedStep: step })
+      }
+      if (remaining > 0) frame = requestAnimationFrame(animate)
+    }
+    let frame = requestAnimationFrame(animate)
+    return () => cancelAnimationFrame(frame)
+  }, [manual, arrived, entrance, startY, lane, stall, stallY, direction])
 
   return <main className={arrived ? 'navigation-screen arrived' : 'navigation-screen'} data-solid={solidSurfaces}>
     <div className="map-stage">
-      <div className="lot-map" role="img" aria-label={`Route from the ${spot.lot} Lot entrance to space ${spot.id} in aisle ${spot.aisle}`}>
-        <canvas ref={canvas} width={width * 2} height={height * 2} aria-hidden="true" />
-        <span className="stall-pin" style={{ left: `${stall / width * 100}%`, top: `${(lane - 48) / height * 100}%` }}><b>P</b>{spot.id}</span>
-        {!arrived && <span className="driver-marker" style={{ left: `${x / width * 100}%`, top: `${y / height * 100}%`, rotate: `${heading}deg` }} />}
-      </div>
       <div className="turn-card">
-        <span className="turn-arrow" aria-hidden="true">{arrived ? '✓' : step === 1 ? '↑' : (step === 0 ? turns[0] : turns[1]) === 'Turn right' ? '↱' : '↰'}</span>
+        <span className="turn-arrow" aria-hidden="true">{arrow}</span>
         <div>
-          <p>{paused ? 'Route paused' : spot.lot + ' Lot'}</p>
-          <h1 ref={turn} tabIndex={-1} aria-live="polite">{arrived ? `Arrived at ${spot.id}` : step === 0 ? `${turns[0]} into aisle ${spot.aisle}` : step === 1 ? `Continue toward ${spot.id}` : `${turns[1]} into ${spot.id}`}</h1>
+          <p>Simulated drive{manual && ` · Step ${step + 1} of ${instructions.length}`}</p>
+          <h1 ref={turn} tabIndex={-1} aria-live="polite">{instruction}</h1>
         </div>
         <button className="nav-back" onClick={onEnd} aria-label="Back to parking">←</button>
       </div>
-      {!arrived && <button className="route-pause" onClick={() => setPaused(value => !value)} aria-label={paused ? 'Resume route' : 'Pause route'}>{paused ? '▶' : 'Ⅱ'}</button>}
+      {!directionsOnly && <LotMap spot={spot} highContrast={highContrast} textSize={textSize}>
+        {!manual && !arrived && <span ref={marker} className="driver-position" aria-hidden="true"
+          style={{ translate: `${entrance / width * 100}% ${startY / height * 100}%` }}>
+          <span className="driver-marker" style={{ rotate: animatedStep === 1 ? `${direction * 90}deg` : undefined }} />
+        </span>}
+      </LotMap>}
     </div>
     <section className="route-sheet" aria-label="Parking destination">
       <div className="route-destination">
-        <div><h2>{spot.id}</h2><p>{spot.lot} Lot · Aisle {spot.aisle}</p></div>
-        <span className="route-time">{arrived ? 'Arrived' : `${Math.ceil((driveTime - elapsed) / 1000)} sec`}</span>
+        <div><h2>{spot.id}</h2><p>{lotName} · Aisle {spot.aisle}</p></div>
+        {!manual && <span className="route-time">{arrived ? 'Arrived' : `${seconds} sec`}</span>}
       </div>
-      <div className="route-actions">
-        <button className="secondary" onClick={onOccupied}>Spot occupied</button>
-        <button onClick={onPark}>I’ve parked</button>
-      </div>
+      {manual && <>
+        <h2>Route directions</h2>
+        <ol className="route-steps">{instructions.map(([, text], index) => <li key={text}
+          aria-current={index === step ? 'step' : undefined}>{text}</li>)}</ol>
+        <div className="route-step-controls">
+          <button className="secondary" type="button" disabled={step === 0} onClick={() => setManualStep(step - 1)}>Previous step</button>
+          <button className="secondary" type="button" disabled={step === instructions.length - 1}
+            onClick={() => setManualStep(step + 1)}>Next step</button>
+        </div>
+      </>}
+      {(arrived || manual && step === instructions.length - 1) && <div className="route-walk">
+        <strong>{course.building} · {course.room}</strong>
+        <p>About {Math.ceil(spot.walk)} min walk</p>
+      </div>}
+      <button className="primary-action" onClick={onPark}>I’ve parked</button>
     </section>
   </main>
 }
