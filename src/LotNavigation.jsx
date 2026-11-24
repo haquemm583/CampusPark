@@ -147,7 +147,7 @@ export function ParkingMapPreview({ spot, highContrast, textSize }) {
   return <LotMap spot={spot} highContrast={highContrast} textSize={textSize} preview />
 }
 
-export default function LotNavigation({ spot, course, solidSurfaces, highContrast, textSize, motion, directionsOnly, onEnd, onPark }) {
+export default function LotNavigation({ spot, destination, highContrast, textSize, motion, directionsOnly, onEnd, onOccupied, onPark }) {
   const turn = useRef(null)
   const marker = useRef(null)
   const camera = useRef(null)
@@ -218,7 +218,7 @@ export default function LotNavigation({ spot, course, solidSurfaces, highContras
     }
   }, [manual, arrived, entrance, startY, lane, stall, stallY, direction])
 
-  return <main className={arrived ? 'navigation-screen arrived' : 'navigation-screen'} data-solid={solidSurfaces}>
+  return <main className={arrived ? 'navigation-screen arrived' : 'navigation-screen'}>
     <div className={directionsOnly ? 'map-stage' : 'map-stage map-stage-full'}>
       <div className="turn-card">
         <span className="turn-arrow" aria-hidden="true">{arrow}</span>
@@ -252,10 +252,13 @@ export default function LotNavigation({ spot, course, solidSurfaces, highContras
         </div>
       </>}
       {(arrived || manual && step === instructions.length - 1) && <div className="route-walk">
-        <strong>{course.building} · {course.room}</strong>
+        <strong>{destination.building}{destination.room && ` · ${destination.room}`}</strong>
         <p>About {Math.ceil(spot.walk)} min walk</p>
       </div>}
-      <button className="primary-action" onClick={onPark}>I’ve parked</button>
+      <div className="route-actions">
+        <button type="button" className="secondary" onClick={onOccupied}>Spot occupied</button>
+        <button type="button" onClick={onPark}>I’ve parked</button>
+      </div>
     </section>
   </main>
 }

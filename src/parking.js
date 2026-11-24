@@ -4,7 +4,7 @@ import { availableSpots } from './parkingSimulation.js'
 export const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 export { permits }
 export const buildings = destinations.map(([name]) => name)
-const parkingLeadMinutes = 40
+export const parkingLeadMinutes = 40
 
 export function nextClass(courses, now = new Date()) {
   let next = null
@@ -22,10 +22,10 @@ export function nextClass(courses, now = new Date()) {
   return next
 }
 
-export function suggestSpot(zone, building, meetingTime, now = new Date()) {
+export function suggestSpot(zone, building, meetingTime, now = new Date(), occupied = []) {
   if (!Object.hasOwn(permits, zone)) return null
   const arrival = meetingTime
     ? new Date(Math.max(now.getTime(), meetingTime.getTime() - parkingLeadMinutes * 60_000))
     : now
-  return availableSpots(zone, building, arrival).sort((a, b) => a.walk - b.walk)[0] ?? null
+  return availableSpots(zone, building, arrival, occupied).sort((a, b) => a.walk - b.walk)[0] ?? null
 }

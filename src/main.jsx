@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { destinations } from './campusData.js'
-import { days, nextClass, permits, suggestSpot } from './parking.js'
+import { days, nextClass, parkingLeadMinutes, permits, suggestSpot } from './parking.js'
 import { isParkingStall } from './parkingSimulation.js'
 import LotNavigation, { ParkingMapPreview } from './LotNavigation.jsx'
 import './styles.css'
@@ -46,7 +46,7 @@ function classCountdown(start, now) {
 
 function load() {
   const defaults = {
-    zone: '', courses: [], solidSurfaces: false, textSize: 'system',
+    zone: '', courses: [], occupied: [], solidSurfaces: false, textSize: 'system',
     highContrast: false, motion: 'system', directionsOnly: false,
   }
   try {
@@ -54,7 +54,7 @@ function load() {
     delete saved.parked
     delete saved.preferWalking
     if (!Object.hasOwn(permits, saved.zone)) saved.zone = ''
-    delete saved.occupied
+    saved.occupied = Array.isArray(saved.occupied) ? [...new Set(saved.occupied.filter(isParkingStall))] : []
     saved.setupComplete = saved.setupComplete ?? Boolean(saved.zone && saved.courses.length)
     return saved
   } catch {
@@ -65,26 +65,38 @@ function load() {
 function readScreen(historyState) {
   const screen = historyState?.campusPark ?? home
   if (screen.page === 'about') return { ...screen, page: 'settings' }
-  const spot = screen.trip?.spot
-  if (screen.page === 'replacement') return home
-  if (['route', 'complete'].includes(screen.page) && (!isParkingStall(spot?.id) || spot.shuttle)) return home
+  if (screen.page === 'building-parking' && !buildingOptions.some(([name]) => name === screen.building)) return home
+  if (['route', 'replacement', 'complete'].includes(screen.page)) {
+    const spot = screen.trip?.spot
+    const destination = screen.trip?.destination ?? screen.trip?.course
+    if (!isParkingStall(spot?.id) || spot.shuttle || !destination?.building) return home
+    return { ...screen, trip: { spot, destination } }
+  }
   return screen
 }
 
 function App() {
   const [data, setData] = useState(load)
   const [screen, setScreen] = useState(() => readScreen(history.state))
-  const { canGoBack, trip } = screen
+  const { building, canGoBack, trip } = screen
+  const destination = trip?.destination
   const page = data.setupComplete ? screen.page : 'setup'
+  const isTabPage = Object.hasOwn(tabs, page)
+  const { previousPage = isTabPage ? 'parking' : null } = screen
+  const activeTab = isTabPage ? page : page === 'edit' ? (previousPage ?? 'schedule') : 'parking'
+  const routing = page === 'route'
   const [now, setNow] = useState(() => new Date())
   const heading = useRef(null)
   const permitButton = useRef(null)
-  const { courses, zone, solidSurfaces, textSize, highContrast, motion, directionsOnly } = data
+  const { courses, zone, occupied, solidSurfaces, textSize, highContrast, motion, directionsOnly } = data
   const opaqueSurfaces = solidSurfaces || highContrast
   const hasPermit = Object.hasOwn(permits, zone)
   const editing = courses.find(course => course.id === screen.courseId)
   const next = nextClass(courses, now)
-  const suggestion = next && suggestSpot(zone, next.building, next.time, now)
+  const suggestion = page === 'parking' && next && suggestSpot(zone, next.building, next.time, now, occupied)
+  const buildingSuggestion = page === 'building-parking' && suggestSpot(zone, building, undefined, now, occupied)
+  const replacement = page === 'replacement' &&
+    suggestSpot(zone, destination.building, undefined, now, [...occupied, trip.spot.id])
 
   useEffect(() => localStorage.setItem(storageKey, JSON.stringify(data)), [data])
   useLayoutEffect(() => {
@@ -115,7 +127,7 @@ function App() {
   }
 
   function navigate(page, details = {}, replace = false) {
-    const nextScreen = { page, ...details, canGoBack: !replace || canGoBack }
+    const nextScreen = { page, ...details, previousPage: replace ? previousPage : screen.page, canGoBack: !replace || canGoBack }
     if (replace) history.replaceState({ campusPark: nextScreen }, '')
     else history.pushState({ campusPark: nextScreen }, '')
     setScreen(nextScreen)
@@ -127,16 +139,23 @@ function App() {
 
   function selectTab(tab) {
     if (tab === page) return
-    if (tab === 'parking') back()
-    else navigate(tab, {}, page !== 'parking')
+    if (tab === 'parking' && previousPage === 'parking' && canGoBack) back()
+    else navigate(tab, {}, page !== 'parking' && canGoBack)
   }
 
   function edit(course) {
     navigate('edit', { courseId: course?.id })
   }
 
-  function start(spot, course) {
-    navigate('route', { trip: { spot, course } })
+  function start(spot, destination) {
+    navigate('route', { trip: { spot, destination } }, page === 'replacement')
+  }
+
+  function reportOccupied() {
+    const { id } = trip.spot
+    setData(current => current.occupied.includes(id) ? current : { ...current, occupied: [...current.occupied, id] })
+    setNow(new Date())
+    navigate('replacement', { trip }, true)
   }
 
   function finishSetup(zone, course) {
@@ -152,34 +171,36 @@ function App() {
 
   const titles = {
     parking: 'Find parking', schedule: 'Schedule & permit', edit: editing ? 'Edit class' : 'Add class',
+    buildings: 'Choose a campus building', 'building-parking': building,
+    replacement: replacement ? 'Another parking spot' : 'No replacement available',
     complete: 'You’re parked', settings: 'Settings',
   }
 
-  if (page === 'route') return <LotNavigation key={trip.spot.id} spot={trip.spot} course={trip.course} solidSurfaces={opaqueSurfaces}
-    highContrast={highContrast} textSize={textSize} motion={motion} directionsOnly={directionsOnly} onEnd={back}
-    onPark={() => navigate('complete', { trip }, true)} />
-
   return (
-    <div className="app" data-solid={opaqueSurfaces} data-motion={motion}>
-      <header className="app-header">
+    <div className={routing ? 'app route-app' : 'app'} data-solid={opaqueSurfaces} data-motion={motion}>
+      {!routing && <header className="app-header">
         <div className="wordmark">
           <img className="app-mark" src="/campuspark-icon.png" alt="" width="44" height="44" />
           <span className="wordmark-name">CampusPark</span>
         </div>
         <img className="campus-logo" src="/tamucc-logo-white.png" alt="Texas A&amp;M University-Corpus Christi" width="2760" height="1220" />
-      </header>
-      {page === 'setup' ? <FirstLaunch zone={zone} hasClass={courses.length > 0} heading={heading} onFinish={finishSetup} />
+      </header>}
+      {routing ? <LotNavigation key={trip.spot.id} spot={trip.spot} destination={destination} highContrast={highContrast}
+        textSize={textSize} motion={motion} directionsOnly={directionsOnly} onEnd={back} onOccupied={reportOccupied}
+        onPark={() => navigate('complete', { trip }, true)} />
+        : page === 'setup' ? <FirstLaunch zone={zone} hasClass={courses.length > 0} heading={heading} onFinish={finishSetup} />
         : <main key={page} className={page === 'complete' ? 'completion-page' : 'content-page'}
-          data-tab-content={page in tabs ? '' : undefined}>
+          data-tab-content={isTabPage ? '' : undefined}>
         {page === 'complete' && <span className="completion-mark" aria-hidden="true">✓</span>}
         <h1 ref={heading} tabIndex={-1}>{titles[page]}</h1>
         {page === 'parking' && <time className="current-date" dateTime={now.toISOString()}>{dateFormat.format(now)}</time>}
 
         {page === 'parking' && <>
+          {hasPermit && <button className="secondary" onClick={() => navigate('buildings')}>Choose a building</button>}
           {!hasPermit || !next ? <section className="screen-section">
             <p className="intro">{!hasPermit
               ? 'Choose your TAMU-CC parking permit to see where you can park.'
-              : 'Add a class so we can suggest parking near your next destination.'}</p>
+              : 'Add a class to get automatic parking suggestions for your schedule.'}</p>
             <button className="primary-action" onClick={() => !hasPermit ? navigate('schedule', { focusPermit: true }) : edit(null)}>
               {!hasPermit ? 'Choose permit zone' : 'Add your first class'}
             </button>
@@ -188,7 +209,9 @@ function App() {
               onClick={() => start(suggestion, next)} />
               : <section className="screen-section">
                 <h2>No parking suggestions</h2>
-                <p>Try checking your permit zone for parking near your next class.</p>
+                <p>{occupied.length > 0
+                  ? 'You can clear occupied reports in Settings to include those spots in suggestions again.'
+                  : 'Try checking your permit zone for parking near your next class.'}</p>
                 <button className="primary-action" onClick={() => navigate('schedule', { focusPermit: true })}>Check permit zone</button>
               </section>}
             <dl className="detail-list">
@@ -204,6 +227,22 @@ function App() {
               <div className="detail-row"><dt>Parking permit</dt><dd><strong>{permits[zone]}</strong></dd></div>
             </dl>
           </>}
+        </>}
+
+        {page === 'buildings' && <>
+          <button className="secondary" onClick={back}>Back to parking</button>
+          <BuildingPicker onSelect={building => {
+            setNow(new Date())
+            navigate('building-parking', { building })
+          }} />
+        </>}
+
+        {page === 'building-parking' && <>
+          {buildingSuggestion
+            ? <SpotRecommendation spot={buildingSuggestion} directionsOnly={directionsOnly} highContrast={highContrast} textSize={textSize}
+                onClick={() => start(buildingSuggestion, { building })} />
+            : <p role="status">There are no suggested spots for your permit near this building right now.</p>}
+          <button className="secondary" onClick={back}>Choose another building</button>
         </>}
 
         {page === 'schedule' && <>
@@ -250,13 +289,22 @@ function App() {
         } : undefined} />
         </>}
 
+        {page === 'replacement' && <>
+          <p className="alert" role="status">Parking spot {trip.spot.id} was reported occupied.</p>
+          {replacement
+            ? <SpotRecommendation spot={replacement} directionsOnly={directionsOnly} highContrast={highContrast} textSize={textSize}
+                label="Suggested replacement" action={`Navigate to ${replacement.id}`} onClick={() => start(replacement, destination)} />
+            : <p>There are no other suggested spots for your permit near {destination.building} right now.</p>}
+          <button className="secondary" onClick={back}>Back to parking</button>
+        </>}
+
         {page === 'complete' && <>
           <p className="completion-location">{trip.spot.road ? trip.spot.lot : `${trip.spot.lot} Lot`} · {trip.spot.id}</p>
           <div className="walking-destination">
             <span className="section-icon" aria-hidden="true">🚶︎</span>
             <div>
-              <strong>{trip.course.building} · {trip.course.room}</strong>
-              <p className="muted">{trip.course.name}</p>
+              <strong>{destination.building}{destination.room && ` · ${destination.room}`}</strong>
+              {destination.name && <p className="muted">{destination.name}</p>}
               <p className="muted">About {Math.ceil(trip.spot.walk)} min walk</p>
             </div>
           </div>
@@ -301,25 +349,71 @@ function App() {
               </select>
             </label>
           </section>
-          <details className="about-details section-divider">
-            <summary>About CampusPark</summary>
-            <p>CampusPark is a student project by Pixel People for the Human Computer Interaction course at Texas A&amp;M University-Corpus Christi.</p>
-            <p>Follow posted parking signs on campus.</p>
-            <p>Schedules and preferences are stored on this device.</p>
-          </details>
+          <section className="screen-section section-divider">
+            <h2>Parking reports</h2>
+            <p>CampusPark skips spots you report as occupied until you clear your reports.</p>
+            <button className="secondary" disabled={occupied.length === 0} onClick={() => update({ occupied: [] })}>Clear occupied reports</button>
+          </section>
+          <section className="section-divider" aria-labelledby="settings-help">
+            <h2 id="settings-help">Help &amp; information</h2>
+            <details className="settings-details">
+              <summary>Privacy &amp; saved data</summary>
+              <p>Your class schedule, permit zone, preferences, and occupied reports are saved in this browser or in the Android app. CampusPark uses them on your device and works without an account or location access.</p>
+              <p>To delete your saved information, clear this site's data in your browser or clear CampusPark's app storage in Android settings.</p>
+            </details>
+            <details className="settings-details">
+              <summary>How we suggest parking</summary>
+              <p>CampusPark finds parking for your next class or a building you choose on the Parking screen. It suggests the spot with the shortest estimated walk that your permit covers on the same campus.</p>
+              <p>CampusPark estimates demand by lot, day, and time. For a class, it looks ahead to {parkingLeadMinutes} minutes before class, or uses the current time if you’re already within that window. If you choose a building, it uses the current time.</p>
+              <p>If you see no suggestion, check your permit zone under Schedule.</p>
+            </details>
+            <details className="settings-details">
+              <summary>Navigation &amp; parking rules</summary>
+              <p>Availability is simulated, so check whether a spot is open when you arrive. Suggestions do not reserve a space.</p>
+              <p>The in-lot route is an approximate preview. The marker moves on a timer. Choose Directions only or turn on Reduce motion to advance through the steps yourself.</p>
+              <p>Follow posted signs. CampusPark covers standard permit parking in Zones A–D. Check with Parking Services for visitor, accessible, and reserved parking.</p>
+              <p><a href="https://www.tamucc.edu/finance-and-administration/auxiliary-services/parking-services/index">TAMU-CC Parking Services</a></p>
+            </details>
+            <details className="settings-details">
+              <summary>About CampusPark</summary>
+              <p>CampusPark is a student project by Pixel People for the Human Computer Interaction course at Texas A&amp;M University-Corpus Christi.</p>
+            </details>
+          </section>
         </>}
       </main>}
-      {page in tabs && <nav aria-label="Main navigation">
-        {Object.entries(tabs).map(([key, label]) => <button key={key} aria-current={page === key ? 'page' : undefined} onClick={() => selectTab(key)}>
+      <nav aria-label="Main navigation">
+        {Object.entries(tabs).map(([key, label]) => <button key={key} type="button" disabled={page === 'setup'}
+          aria-current={key === activeTab ? (isTabPage ? 'page' : 'location') : undefined} onClick={() => selectTab(key)}>
           <svg className="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
             <path d={tabIconPaths[key]} />
           </svg>
           {label}
         </button>)}
-      </nav>}
+      </nav>
     </div>
   )
+}
+
+function BuildingPicker({ onSelect }) {
+  const [search, setSearch] = useState('')
+  const query = search.trim().toLowerCase()
+  const matches = buildingOptions.filter(([name, code]) => name.toLowerCase().includes(query) || code.toLowerCase().includes(query))
+
+  return <>
+    <label>Search buildings
+      <input type="search" value={search} onChange={event => setSearch(event.target.value)} />
+    </label>
+    {matches.length > 0 ? <ul className="building-list">
+      {matches.map(([name, code]) => <li key={name}>
+        <button type="button" className="building-row" onClick={() => onSelect(name)}>
+          <span className="building-name">{name}</span>
+          {code && <span className="building-code muted">{code}</span>}
+          <span className="row-chevron" aria-hidden="true">›</span>
+        </button>
+      </li>)}
+    </ul> : <p role="status">No buildings match your search.</p>}
+  </>
 }
 
 function FirstLaunch({ zone, hasClass, heading, onFinish }) {
@@ -365,13 +459,13 @@ function FirstLaunch({ zone, hasClass, heading, onFinish }) {
   </main>
 }
 
-function SpotRecommendation({ spot, directionsOnly, highContrast, textSize, onClick }) {
+function SpotRecommendation({ spot, directionsOnly, highContrast, textSize, label = 'Suggested parking spot', action = 'Start navigation', onClick }) {
   return <section className="recommendation">
-    <p className="recommendation-label">Suggested parking spot</p>
+    <p className="recommendation-label">{label}</p>
     <h2 className="spot">{spot.road ? spot.lot : `${spot.lot} Lot`}</h2>
     <p><strong>Parking spot {spot.id}</strong> · About {Math.ceil(spot.walk)} min walk</p>
     {directionsOnly ? <p>Aisle {spot.aisle}</p> : <ParkingMapPreview spot={spot} highContrast={highContrast} textSize={textSize} />}
-    <button className="primary-action" onClick={onClick}>Start navigation</button>
+    <button className="primary-action" onClick={onClick}>{action}</button>
     {spot.road && <p className="recommendation-note">{spot.road} · Estimated availability · {spot.availableInArea} of {spot.modeledInArea} spots</p>}
   </section>
 }

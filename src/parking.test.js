@@ -20,6 +20,18 @@ test('suggests a Hammerhead stall for Zone D', () => {
   assert.equal(spot.id, 'H-021')
 })
 
+test('replaces reported stalls and returns no suggestion when all eligible stalls are occupied', () => {
+  const building = buildings[0]
+  const candidates = availableSpots('D', building, weekday).sort((a, b) => a.walk - b.walk)
+  const occupied = candidates.slice(0, 2).map(spot => spot.id)
+  const replacement = suggestSpot('D', building, undefined, weekday, occupied)
+
+  assert.equal(replacement.id, candidates[2].id)
+  assert.equal(replacement.availableInArea, candidates.length - occupied.length)
+  assert.equal(replacement.modeledInArea, candidates[2].modeledInArea)
+  assert.equal(suggestSpot('D', building, undefined, weekday, candidates.map(spot => spot.id)), null)
+})
+
 test('offers Zones A–D and limits Zone B to the garage top floor', () => {
   const locations = zone => new Set(availableSpots(zone, buildings[0], afterHours).map(spot => spot.lot))
   assert.deepEqual([...locations('A')].filter(lot => lot.startsWith('Bayside')), [1, 2, 3, 4].map(floor => `Bayside Parking Garage · Floor ${floor}`))

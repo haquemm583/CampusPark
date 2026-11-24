@@ -16,14 +16,15 @@ For Android, run `npm run android:sync` after `npm ci` on a fresh checkout and a
 ## Core tasks
 
 1. On first launch, choose a permit zone and add your first class or finish setup and add it later. Manage your permit and classes under Schedule. Changes persist on this device.
-2. Open Parking to see the next scheduled class and a suggested parking spot. Start navigation to see an aisle route ending at that spot.
-3. Select **I’ve parked** to confirm parking, then **Done** to return to the Parking screen.
+2. Open Parking for a suggested spot near your next class, or select **Choose a building** to browse or search campus destinations. Start navigation from the suggested spot to see its aisle route.
+3. If the spot is taken, select **Spot occupied** to review a replacement for the same building and start a new route. Clear occupied reports in Settings to include those spots in future suggestions again.
+4. Select **I’ve parked** to confirm parking, then **Done** to return to the parking suggestion screen.
 
 For the project walkthrough, enter COSC 3360 Human Computer Interaction, Tuesday and Thursday, 15:30–16:45, Center for Instruction, CI 122, and select Zone A.
 
 ## Data and scope
 
-CampusPark covers 35 destinations, 19 parking areas, and four permit zones. Bayside Parking Garage recommendations account for each floor. Select a permit and class destination under Schedule.
+CampusPark covers 35 destinations, 19 parking areas, and four permit zones. Bayside Parking Garage recommendations account for each floor.
 
 | Reference | What it informs |
 | --- | --- |
@@ -34,13 +35,13 @@ CampusPark covers 35 destinations, 19 parking areas, and four permit zones. Bays
 
 Ocean Drive is the approach from downtown and connects to Ennis Joslin Road near Oso Bay. The mainland approach to Momentum uses Islander Way and Nile Drive. The nearby Hans & Pat Suter Wildlife Refuge and Bay Trail are area landmarks. Parking at those sites and at apartment complexes is outside the campus permit inventory. [City trail directory](https://www.corpuschristitx.gov/department-directory/parks-and-recreation/parks-and-facilities/hike-and-bike-trails/)
 
-**How estimates work.** CampusPark models arrival 40 minutes before class or at the current time if that window has started. The availability model uses a date- and stall-specific seed plus time-of-day and lot-type demand. Walking estimates follow approximate campus corridors and include time to exit the aisle or garage level. Recommendations use parking areas near the destination on the same campus.
+**How estimates work.** For a scheduled class, CampusPark models arrival 40 minutes before class or at the current time if that window has started. For a building you choose, CampusPark uses the current time. The availability model uses a date- and stall-specific seed plus time-of-day and lot-type demand. Walking estimates follow approximate campus corridors and include time to exit the aisle or garage level. Recommendations use parking areas near the destination on the same campus.
 
 **Parking rules.** The university FAQ reports roughly 6,000 main-campus spaces. The garage project materials-testing contractor reports four levels and 1,205 vehicles at completion. CampusPark covers standard permit parking. The campus uses distinct rules for visitor, accessible, and reserved spaces. Parking Services and event organizers handle visitor payment and special-event permissions. [Parking FAQ](https://www.tamucc.edu/finance-and-administration/auxiliary-services/parking-services/frequently-asked-questions.php) · [Bayside garage project](https://www.ariasinc.com/projects/texas-a-m-university-corpus-christi-bayside-parking-garage) · [Visitor parking](https://www.tamucc.edu/finance-and-administration/auxiliary-services/parking-services/visitor-parking.php)
 
 The route preview advances on a timer. Follow posted signs on campus. The app uses local time for the class schedule, and recommendations carry no reservation.
 
-The app stores class schedules, permit zone, and appearance preferences in local storage. It requires no account or location permission and sends no user data to a server.
+The app stores class schedules, permit zone, appearance preferences, and occupied reports in local storage. It requires no account or location permission and sends no user data to a server.
 
 ## Accessibility and evaluation
 

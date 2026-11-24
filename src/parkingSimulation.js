@@ -104,12 +104,13 @@ function occupancySample(key) {
   return ((hash ^ (hash >>> 16)) >>> 0) / 2 ** 32
 }
 
-export function availableSpots(zone, building, arrival) {
+export function availableSpots(zone, building, arrival, occupied = []) {
   const [, , destination, x, y] = destinationByName.get(building) ?? destinations[0]
   const distances = walkingDistances(destination)
   const destinationOffset = mapDistance([x, y], walkNodes[destination])
   const type = dayType(arrival)
   const date = calendarDay(arrival)
+  const reportedStalls = new Set(occupied)
   const candidates = []
 
   for (const area of areas) {
@@ -120,6 +121,7 @@ export function availableSpots(zone, building, arrival) {
     const walkBetween = (distances[area.node] + destinationOffset) * minutesPerMapUnit
     const dateKey = `${date}:${area.id}`
     for (const stall of area.stalls) {
+      if (reportedStalls.has(stall.id)) continue
       const rowLoad = Math.max(0, load - stall.row * 0.018)
       if (occupancySample(`${dateKey}:${stall.id}`) < rowLoad) continue
 
