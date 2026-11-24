@@ -70,7 +70,7 @@ export const permits = {
 }
 
 // Row counts define the synthetic inventory. Each row has eight sample stalls.
-// Access roads are area references for the schematic, not turn-by-turn directions.
+// Access-road names describe the area in parking recommendations.
 // [ID, label, permits, pedestrian waypoint, x, y, access road, rows, demand profile]
 export const parkingAreas = [
   ...[1, 2, 3, 4].map(floor => [

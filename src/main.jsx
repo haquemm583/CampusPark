@@ -47,12 +47,14 @@ function classCountdown(start, now) {
 function load() {
   const defaults = {
     zone: '', courses: [], occupied: [], solidSurfaces: false, textSize: 'system',
-    highContrast: false, motion: 'system', directionsOnly: false,
+    highContrast: false, motion: 'system', directionsOnly: false, mapStyle: 'standard', voiceDirections: true,
   }
   try {
     const saved = { ...defaults, ...JSON.parse(localStorage.getItem(storageKey)) }
     delete saved.parked
     delete saved.preferWalking
+    if (saved.mapStyle !== 'aerial') saved.mapStyle = 'standard'
+    saved.voiceDirections = saved.voiceDirections !== false
     if (!Object.hasOwn(permits, saved.zone)) saved.zone = ''
     saved.occupied = Array.isArray(saved.occupied) ? [...new Set(saved.occupied.filter(isParkingStall))] : []
     saved.setupComplete = saved.setupComplete ?? Boolean(saved.zone && saved.courses.length)
@@ -88,7 +90,7 @@ function App() {
   const [now, setNow] = useState(() => new Date())
   const heading = useRef(null)
   const permitButton = useRef(null)
-  const { courses, zone, occupied, solidSurfaces, textSize, highContrast, motion, directionsOnly } = data
+  const { courses, zone, occupied, solidSurfaces, textSize, highContrast, motion, directionsOnly, mapStyle, voiceDirections } = data
   const opaqueSurfaces = solidSurfaces || highContrast
   const hasPermit = Object.hasOwn(permits, zone)
   const editing = courses.find(course => course.id === screen.courseId)
@@ -186,7 +188,9 @@ function App() {
         <img className="campus-logo" src="/tamucc-logo-white.png" alt="Texas A&amp;M University-Corpus Christi" width="2760" height="1220" />
       </header>}
       {routing ? <LotNavigation key={trip.spot.id} spot={trip.spot} destination={destination} highContrast={highContrast}
-        textSize={textSize} motion={motion} directionsOnly={directionsOnly} onEnd={back} onOccupied={reportOccupied}
+        motion={motion} directionsOnly={directionsOnly} mapStyle={mapStyle} onMapStyleChange={mapStyle => update({ mapStyle })}
+        voiceDirections={voiceDirections} onVoiceChange={voiceDirections => update({ voiceDirections })}
+        onOccupied={reportOccupied}
         onPark={() => navigate('complete', { trip }, true)} />
         : page === 'setup' ? <FirstLaunch zone={zone} hasClass={courses.length > 0} heading={heading} onFinish={finishSetup} />
         : <main key={page} className={page === 'complete' ? 'completion-page' : 'content-page'}
@@ -205,7 +209,7 @@ function App() {
               {!hasPermit ? 'Choose permit zone' : 'Add your first class'}
             </button>
           </section> : <>
-            {suggestion ? <SpotRecommendation spot={suggestion} directionsOnly={directionsOnly} highContrast={highContrast} textSize={textSize}
+            {suggestion ? <SpotRecommendation spot={suggestion} directionsOnly={directionsOnly} highContrast={highContrast} mapStyle={mapStyle}
               onClick={() => start(suggestion, next)} />
               : <section className="screen-section">
                 <h2>No parking suggestions</h2>
@@ -239,7 +243,7 @@ function App() {
 
         {page === 'building-parking' && <>
           {buildingSuggestion
-            ? <SpotRecommendation spot={buildingSuggestion} directionsOnly={directionsOnly} highContrast={highContrast} textSize={textSize}
+            ? <SpotRecommendation spot={buildingSuggestion} directionsOnly={directionsOnly} highContrast={highContrast} mapStyle={mapStyle}
                 onClick={() => start(buildingSuggestion, { building })} />
             : <p role="status">There are no suggested spots for your permit near this building right now.</p>}
           <button className="secondary" onClick={back}>Choose another building</button>
@@ -292,7 +296,7 @@ function App() {
         {page === 'replacement' && <>
           <p className="alert" role="status">Parking spot {trip.spot.id} was reported occupied.</p>
           {replacement
-            ? <SpotRecommendation spot={replacement} directionsOnly={directionsOnly} highContrast={highContrast} textSize={textSize}
+            ? <SpotRecommendation spot={replacement} directionsOnly={directionsOnly} highContrast={highContrast} mapStyle={mapStyle}
                 label="Suggested replacement" action={`Navigate to ${replacement.id}`} onClick={() => start(replacement, destination)} />
             : <p>There are no other suggested spots for your permit near {destination.building} right now.</p>}
           <button className="secondary" onClick={back}>Back to parking</button>
@@ -459,12 +463,12 @@ function FirstLaunch({ zone, hasClass, heading, onFinish }) {
   </main>
 }
 
-function SpotRecommendation({ spot, directionsOnly, highContrast, textSize, label = 'Suggested parking spot', action = 'Start navigation', onClick }) {
+function SpotRecommendation({ spot, directionsOnly, highContrast, mapStyle, label = 'Suggested parking spot', action = 'Start navigation', onClick }) {
   return <section className="recommendation">
     <p className="recommendation-label">{label}</p>
     <h2 className="spot">{spot.road ? spot.lot : `${spot.lot} Lot`}</h2>
     <p><strong>Parking spot {spot.id}</strong> · About {Math.ceil(spot.walk)} min walk</p>
-    {directionsOnly ? <p>Aisle {spot.aisle}</p> : <ParkingMapPreview spot={spot} highContrast={highContrast} textSize={textSize} />}
+    {!directionsOnly && <ParkingMapPreview spot={spot} highContrast={highContrast} mapStyle={mapStyle} />}
     <button className="primary-action" onClick={onClick}>{action}</button>
     {spot.road && <p className="recommendation-note">{spot.road} · Estimated availability · {spot.availableInArea} of {spot.modeledInArea} spots</p>}
   </section>
