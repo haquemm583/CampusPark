@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const width = 400
 const height = 470
 const driveTime = 16_000
+const driveZoom = 1.55
+const driveLookAhead = 38
 const simulatedSpaces = Array.from({ length: 8 }, (_, column) => 88 + column * 32)
 const legacyLayouts = {
   Tarpon: { lane: 212, entrance: 72, spaces: [188, 240, 292] },
@@ -27,6 +29,10 @@ function aisleLayout(spot) {
 function routePoints({ entrance, lane, spaces }, column) {
   const stall = spaces[column]
   return [[entrance, 388], [entrance, lane], [stall, lane], [stall, lane - 48]]
+}
+
+function cameraPan(position, size) {
+  return Math.min(0, Math.max(1 - driveZoom, .5 - position / size * driveZoom)) * 100
 }
 
 function drawMap(canvas, layout, route, top, highContrast) {
@@ -113,7 +119,7 @@ function drawMap(canvas, layout, route, top, highContrast) {
   }
 }
 
-function LotMap({ spot, highContrast, textSize, preview = false, children }) {
+function LotMap({ spot, highContrast, textSize, preview = false, camera, children }) {
   const canvas = useRef(null)
   const layout = useMemo(() => aisleLayout(spot), [spot])
   const route = useMemo(() => routePoints(layout, spot.column), [layout, spot.column])
@@ -127,11 +133,13 @@ function LotMap({ spot, highContrast, textSize, preview = false, children }) {
   }, [layout, route, top, highContrast, textSize])
 
   return <div className={preview ? 'lot-map parking-map-preview' : 'lot-map'} role="img"
-    style={{ aspectRatio: `${width} / ${mapHeight}` }}
+    style={preview ? { aspectRatio: `${width} / ${mapHeight}` } : undefined}
     aria-label={`Route from the lot entrance through aisle ${spot.aisle} to parking spot ${spot.id} in ${lotName}`}>
-    <canvas ref={canvas} width={width * 2} height={mapHeight * 2} aria-hidden="true" />
-    <span className="stall-pin" style={{ left: `${stallX / width * 100}%`, top: `${(stallY - top) / mapHeight * 100}%` }}><b>P</b>{spot.id}</span>
-    {children}
+    <div ref={camera} className="lot-map-scene" style={camera ? { '--map-zoom': driveZoom } : undefined}>
+      <canvas ref={canvas} width={width * 2} height={mapHeight * 2} aria-hidden="true" />
+      <span className="stall-pin" style={{ left: `${stallX / width * 100}%`, top: `${(stallY - top) / mapHeight * 100}%` }}><b>P</b>{spot.id}</span>
+      {children}
+    </div>
   </div>
 }
 
@@ -142,15 +150,16 @@ export function ParkingMapPreview({ spot, highContrast, textSize }) {
 export default function LotNavigation({ spot, course, solidSurfaces, highContrast, textSize, motion, directionsOnly, onEnd, onPark }) {
   const turn = useRef(null)
   const marker = useRef(null)
+  const camera = useRef(null)
   const elapsed = useRef(0)
-  const [{ seconds, animatedStep }, setDriveStatus] = useState({ seconds: driveTime / 1000, animatedStep: 0 })
+  const [{ completed, animatedStep }, setDriveStatus] = useState({ completed: false, animatedStep: 0 })
   const [manualStep, setManualStep] = useState(0)
   const [systemReducedMotion, setSystemReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const manual = directionsOnly || motion === 'reduce' || (motion === 'system' && systemReducedMotion)
   const lotName = spot.road ? spot.lot : `${spot.lot} Lot`
   const route = useMemo(() => routePoints(aisleLayout(spot), spot.column), [spot])
   const [[entrance, startY], [, lane], [stall], [, stallY]] = route
-  const arrived = !manual && seconds === 0
+  const arrived = !manual && completed
   const step = manual ? manualStep : animatedStep
   const direction = stall > entrance ? 1 : -1
   const instructions = [
@@ -170,36 +179,47 @@ export default function LotNavigation({ spot, course, solidSurfaces, highContras
     return () => preference.removeEventListener('change', syncPreference)
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (manual || arrived) return
+    const scene = camera.current
     const firstTurn = startY - lane
     const secondTurn = firstTurn + Math.abs(stall - entrance)
     const total = secondTurn + lane - stallY
     const startedAt = performance.now() - elapsed.current
-    let lastSeconds
     let lastStep
+    const positionAt = distance => [
+      entrance + direction * Math.min(Math.max(0, distance - firstTurn), secondTurn - firstTurn),
+      startY - Math.min(distance, firstTurn) - Math.max(0, distance - secondTurn),
+    ]
+    function moveVehicle(distance) {
+      const [x, y] = positionAt(distance)
+      const [aheadX, aheadY] = positionAt(Math.min(total, distance + driveLookAhead))
+      marker.current.style.translate = `${x / width * 100}% ${y / height * 100}%`
+      scene.style.translate = `${cameraPan(aheadX, width)}% ${cameraPan(aheadY, height)}%`
+    }
     function animate(now) {
       if (!marker.current) return
       elapsed.current = Math.min(driveTime, Math.max(0, now - startedAt))
       const distance = total * elapsed.current / driveTime
       const step = distance < firstTurn ? 0 : distance < secondTurn ? 1 : 2
-      const remaining = Math.ceil((driveTime - elapsed.current) / 1000)
-      const x = entrance + direction * Math.min(Math.max(0, distance - firstTurn), secondTurn - firstTurn)
-      const y = startY - Math.min(distance, firstTurn) - Math.max(0, distance - secondTurn)
-      marker.current.style.translate = `${x / width * 100}% ${y / height * 100}%`
-      if (remaining !== lastSeconds || step !== lastStep) {
-        lastSeconds = remaining
+      const completed = elapsed.current === driveTime
+      moveVehicle(distance)
+      if (step !== lastStep || completed) {
         lastStep = step
-        setDriveStatus({ seconds: remaining, animatedStep: step })
+        setDriveStatus({ completed, animatedStep: step })
       }
-      if (remaining > 0) frame = requestAnimationFrame(animate)
+      if (!completed) frame = requestAnimationFrame(animate)
     }
+    moveVehicle(total * elapsed.current / driveTime)
     let frame = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      scene.style.removeProperty('translate')
+    }
   }, [manual, arrived, entrance, startY, lane, stall, stallY, direction])
 
   return <main className={arrived ? 'navigation-screen arrived' : 'navigation-screen'} data-solid={solidSurfaces}>
-    <div className="map-stage">
+    <div className={directionsOnly ? 'map-stage' : 'map-stage map-stage-full'}>
       <div className="turn-card">
         <span className="turn-arrow" aria-hidden="true">{arrow}</span>
         <div>
@@ -208,7 +228,8 @@ export default function LotNavigation({ spot, course, solidSurfaces, highContras
         </div>
         <button className="nav-back" onClick={onEnd} aria-label="Back to parking">←</button>
       </div>
-      {!directionsOnly && <LotMap spot={spot} highContrast={highContrast} textSize={textSize}>
+      {!directionsOnly && <LotMap spot={spot} highContrast={highContrast} textSize={textSize}
+        camera={!manual && !arrived ? camera : undefined}>
         {!manual && !arrived && <span ref={marker} className="driver-position" aria-hidden="true"
           style={{ translate: `${entrance / width * 100}% ${startY / height * 100}%` }}>
           <span className="driver-marker" style={{ rotate: animatedStep === 1 ? `${direction * 90}deg` : undefined }} />
@@ -218,7 +239,7 @@ export default function LotNavigation({ spot, course, solidSurfaces, highContras
     <section className="route-sheet" aria-label="Parking destination">
       <div className="route-destination">
         <div><h2>{spot.id}</h2><p>{lotName} · Aisle {spot.aisle}</p></div>
-        {!manual && <span className="route-time">{arrived ? 'Arrived' : `${seconds} sec`}</span>}
+        {arrived && <span className="route-arrival">Arrived</span>}
       </div>
       {manual && <>
         <h2>Route directions</h2>

@@ -162,13 +162,30 @@ nav [aria-current="page"] { background: var(--campus-gradient); color: white; bo
 .tab-icon { width: 1.25rem; height: 1.25rem; }
 
 .navigation-screen { padding: max(.65rem, env(safe-area-inset-top)) 0 max(.65rem, env(safe-area-inset-bottom)); gap: .65rem; min-height: 100dvh; max-width: 42rem; margin: auto; background: #e9eee8; }
+.navigation-screen:has(.map-stage-full) {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  grid-template-rows: auto minmax(15rem, 1fr) auto;
+  align-content: stretch;
+  gap: 0;
+}
 .map-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: .65rem; }
+.map-stage-full { display: contents; }
 .lot-map canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .lot-map { position: relative; overflow: hidden; }
-.map-stage > .lot-map { width: min(100%, 440px, max(240px, 48dvh)); justify-self: center; }
+.lot-map-scene { position: absolute; inset: 0; scale: var(--map-zoom, 1); transform-origin: top left; }
+.lot-map-scene :is(.stall-pin, .driver-marker) { scale: calc(1 / var(--map-zoom, 1)); }
+.lot-map-scene .stall-pin { transform-origin: bottom center; }
 .parking-map-preview { margin-top: .45rem; outline: 1px solid #c5cdd2; outline-offset: -1px; border-radius: 1rem; background: #e9eee8; }
 .parking-map-preview .stall-pin { translate: -50% calc(-100% - 3px); }
 .turn-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .65rem; align-items: center; margin-inline: .65rem; padding: .75rem; color: white; background: var(--campus-gradient); border: 1px solid #b8dfff85; border-bottom: 3px solid var(--green); border-radius: 1.4rem; box-shadow: inset 0 1px 1px #e0f0ff65, 0 6px 20px #102d4a40; }
+.map-stage-full .turn-card {
+  z-index: 1;
+  margin: 0;
+  padding: max(.75rem, env(safe-area-inset-top)) max(.75rem, env(safe-area-inset-right)) .75rem max(.75rem, env(safe-area-inset-left));
+  border-radius: 0;
+}
 .turn-card h1 { font-size: 1.27rem; overflow-wrap: anywhere; }
 .turn-card p { font-size: .82rem; color: #d9ebff; margin-bottom: .2rem; }
 .turn-arrow { display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: .7rem; background: var(--deep-blue); font-size: 1.9rem; line-height: 1; }
@@ -180,11 +197,16 @@ nav [aria-current="page"] { background: var(--campus-gradient); color: white; bo
 .driver-marker { position: absolute; translate: -50% -50%; width: 2rem; height: 2rem; background: var(--blue); border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 8px #00346366; }
 .driver-marker::after { content: ''; position: absolute; inset: 4px 5px; background: white; clip-path: polygon(50% 0, 100% 100%, 50% 74%, 0 100%); }
 .route-sheet { margin-inline: .65rem; padding: 1rem; background: var(--surface); border: 1px solid white; border-radius: 1.45rem; box-shadow: var(--rim), 0 -4px 22px #102d4a27; }
+.map-stage-full + .route-sheet {
+  z-index: 1;
+  margin: -.8rem 0 0;
+  padding: 1rem max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  border-radius: 1.45rem 1.45rem 0 0;
+}
 .route-destination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .75rem; margin-bottom: .8rem; overflow-wrap: anywhere; }
 .route-destination h2 { font-size: 1.3rem; line-height: 1.2; }
 .route-destination p { color: #465d73; font-size: .88rem; }
-.route-time { font-weight: 750; color: var(--deep-blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.arrived .route-time { color: var(--green); }
+.route-arrival { font-weight: 750; color: var(--green); }
 .arrived .turn-arrow { background: var(--green); }
 .route-step-controls { display: flex; flex-wrap: wrap; gap: .5rem; }
 .route-step-controls button { flex: 1 1 7rem; }
