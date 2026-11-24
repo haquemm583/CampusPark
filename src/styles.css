@@ -258,13 +258,8 @@ nav [aria-current] { background: var(--campus-gradient); color: white; border-co
 .route-voice-status { margin-bottom: .65rem; color: #465d73; font-size: .85rem; }
 .route-arrival { font-weight: 750; color: var(--green); }
 .arrived .turn-arrow { background: var(--green); }
-.route-step-controls, .route-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.route-step-controls button { flex: 1 1 7rem; }
-.route-actions { margin-top: .75rem; }
+.route-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 .route-actions button { flex: 1 1 9rem; min-height: 52px; }
-.route-steps { margin: .35rem 0 .85rem; padding-inline-start: 1.5rem; }
-.route-steps li { padding: .35rem .45rem; }
-.route-steps [aria-current="step"] { outline: 1px solid var(--line); border-radius: .4rem; background: var(--selected-surface); font-weight: 700; }
 .route-walk { border-top: 1px solid #c5cdd2; margin-block: .75rem; padding-top: .65rem; }
 
 :root[data-high-contrast="true"] {

@@ -188,7 +188,7 @@ function App() {
         <img className="campus-logo" src="/tamucc-logo-white.png" alt="Texas A&amp;M University-Corpus Christi" width="2760" height="1220" />
       </header>}
       {routing ? <LotNavigation key={trip.spot.id} spot={trip.spot} destination={destination} highContrast={highContrast}
-        motion={motion} directionsOnly={directionsOnly} mapStyle={mapStyle} onMapStyleChange={mapStyle => update({ mapStyle })}
+        directionsOnly={directionsOnly} mapStyle={mapStyle} onMapStyleChange={mapStyle => update({ mapStyle })}
         voiceDirections={voiceDirections} onVoiceChange={voiceDirections => update({ voiceDirections })}
         onOccupied={reportOccupied}
         onPark={() => navigate('complete', { trip }, true)} />
@@ -374,7 +374,7 @@ function App() {
             <details className="settings-details">
               <summary>Navigation &amp; parking rules</summary>
               <p>Availability is simulated, so check whether a spot is open when you arrive. Suggestions do not reserve a space.</p>
-              <p>The in-lot route is an approximate preview. The marker moves on a timer. Choose Directions only or turn on Reduce motion to advance through the steps yourself.</p>
+              <p>The drive demo advances automatically. Reduce motion applies to screen transitions and button animations. Directions only hides the map.</p>
               <p>Follow posted signs. CampusPark covers standard permit parking in Zones A–D. Check with Parking Services for visitor, accessible, and reserved parking.</p>
               <p><a href="https://www.tamucc.edu/finance-and-administration/auxiliary-services/parking-services/index">TAMU-CC Parking Services</a></p>
             </details>

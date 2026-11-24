@@ -37,28 +37,22 @@ export function ParkingMapPreview({ spot, highContrast, mapStyle }) {
 }
 
 export default function LotNavigation({
-  spot, destination, highContrast, motion, directionsOnly, mapStyle, voiceDirections,
+  spot, destination, highContrast, directionsOnly, mapStyle, voiceDirections,
   onMapStyleChange, onVoiceChange, onOccupied, onPark,
 }) {
   const turn = useRef(null)
-  const elapsed = useRef(0)
   const animation = useRef({ distance: 0, paint: null })
-  const [{ completed, animatedStep, animatedFeet }, setDriveStatus] = useState({
-    completed: false, animatedStep: 0, animatedFeet: null,
+  const [{ arrived, stepIndex, remainingFeet }, setDriveStatus] = useState({
+    arrived: false, stepIndex: 0, remainingFeet: null,
   })
-  const [manualStep, setManualStep] = useState(0)
   const [voiceUnavailable, setVoiceUnavailable] = useState(false)
-  const [systemReducedMotion, setSystemReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
-  const manual = directionsOnly || motion === 'reduce' || (motion === 'system' && systemReducedMotion)
   const lotName = parkingLotName(spot)
   const route = useMemo(() => campusRoute(spot), [spot])
   const driveTiming = useMemo(() => timedDrive(route, spot.id), [route, spot.id])
   const { steps, total, hasStall } = route
-  const arrived = !manual && completed
-  const stepIndex = manual ? manualStep : animatedStep
   const step = steps[stepIndex]
   const segment = driveTiming.segments[stepIndex]
-  const feet = manual ? segment.feet : animatedFeet ?? segment.feet
+  const feet = remainingFeet ?? segment.feet
   const arrivalText = hasStall ? `Arrived at demo spot ${spot.id}` : `Arrived at the ${route.destination}`
   const arrow = arrived ? '✓' : step.arrow
   const instruction = arrived ? arrivalText : maneuverText(step, feet)
@@ -67,17 +61,8 @@ export default function LotNavigation({
   useEffect(() => { turn.current.focus() }, [spot.id])
 
   useEffect(() => {
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const syncPreference = () => setSystemReducedMotion(preference.matches)
-    preference.addEventListener('change', syncPreference)
-    syncPreference()
-    return () => preference.removeEventListener('change', syncPreference)
-  }, [])
-
-  useEffect(() => {
     if (!voiceDirections || !supportsVoice || document.hidden) return
-    const progress = manual ? segment.from : animation.current.distance
-    const message = arrived ? arrivalText : maneuverText(step, remainingManeuverFeet(route, step, progress))
+    const message = arrived ? arrivalText : maneuverText(step, remainingManeuverFeet(route, step, animation.current.distance))
     const stop = speakDirection(spokenText(message, spot.id), setVoiceUnavailable)
     const stopIfHidden = () => { if (document.hidden) stop() }
     document.addEventListener('visibilitychange', stopIfHidden)
@@ -85,50 +70,50 @@ export default function LotNavigation({
       document.removeEventListener('visibilitychange', stopIfHidden)
       stop()
     }
-  }, [voiceDirections, supportsVoice, arrived, arrivalText, manual, route, segment, spot.id, step])
+  }, [voiceDirections, supportsVoice, arrived, arrivalText, route, spot.id, step])
 
   useEffect(() => {
-    if (manual || arrived) return
-    const startedAt = performance.now() - elapsed.current
+    if (arrived) return
+    const startedAt = performance.now()
     const drive = animation.current
     let lastStep = -1
     let lastFeet = -1
     const { segments, duration } = driveTiming
 
     function animate(now) {
-      elapsed.current = Math.min(duration, Math.max(0, now - startedAt))
-      const activeStep = segments.findLastIndex(segment => segment.start <= elapsed.current)
+      const elapsed = Math.min(duration, Math.max(0, now - startedAt))
+      const activeStep = segments.findLastIndex(segment => segment.start <= elapsed)
       const { from, target, start, duration: segmentTime } = segments[activeStep]
-      const progress = Math.min(1, (elapsed.current - start) / segmentTime)
+      const progress = Math.min(1, (elapsed - start) / segmentTime)
       drive.distance = from + (target - from) * progress
       drive.paint?.()
-      const finished = elapsed.current === duration
+      const finished = elapsed === duration
       const nextFeet = remainingManeuverFeet(route, route.steps[activeStep], drive.distance)
       if (activeStep !== lastStep || nextFeet !== lastFeet || finished) {
         lastStep = activeStep
         lastFeet = nextFeet
-        setDriveStatus({ completed: finished, animatedStep: activeStep, animatedFeet: nextFeet })
+        setDriveStatus({ arrived: finished, stepIndex: activeStep, remainingFeet: nextFeet })
       }
       if (!finished) frame = requestAnimationFrame(animate)
     }
 
     let frame = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(frame)
-  }, [manual, arrived, driveTiming, route])
+  }, [arrived, driveTiming, route])
 
   return <main className={arrived ? 'navigation-screen arrived' : 'navigation-screen'}>
     <div className={directionsOnly ? 'map-stage' : 'map-stage map-stage-full'}>
       <div className="turn-card">
         <span className="turn-arrow" aria-hidden="true">{arrow}</span>
         <div>
-          <p>Campus drive demo{manual && ` · Step ${stepIndex + 1} of ${steps.length}`}</p>
+          <p>Campus drive demo</p>
           <h1 ref={turn} tabIndex={-1}>{instruction}</h1>
           <span className="route-announcement" aria-live="polite">{arrived ? arrivalText : segment.prompt}</span>
         </div>
       </div>
       {!directionsOnly && <div className="navigation-map">
         <CampusRouteMap route={route} spot={spot} lotName={lotName} highContrast={highContrast} mapStyle={mapStyle}
-          distance={manual ? segment.from : total} animation={!manual && !arrived ? animation.current : undefined} />
+          distance={total} animation={!arrived ? animation.current : undefined} />
         <div className="map-style-control" role="group" aria-label="Map style">
           <button type="button" aria-pressed={mapStyle === 'standard'} onClick={() => onMapStyleChange('standard')}>Standard</button>
           <button type="button" aria-pressed={mapStyle === 'aerial'} onClick={() => onMapStyleChange('aerial')}>Aerial</button>
@@ -147,17 +132,7 @@ export default function LotNavigation({
         </div>
       </div>
       {voiceDirections && (!supportsVoice || voiceUnavailable) && <p className="route-voice-status" role="status">Voice unavailable</p>}
-      {manual && <>
-        <h2>Route directions</h2>
-        <ol className="route-steps">{driveTiming.segments.map(({ prompt, from }, index) => <li key={from}
-          aria-current={index === stepIndex ? 'step' : undefined}>{prompt}</li>)}</ol>
-        <div className="route-step-controls">
-          <button className="secondary" type="button" disabled={stepIndex === 0} onClick={() => setManualStep(stepIndex - 1)}>Previous step</button>
-          <button className="secondary" type="button" disabled={stepIndex === steps.length - 1}
-            onClick={() => setManualStep(stepIndex + 1)}>Next step</button>
-        </div>
-      </>}
-      {(arrived || manual && stepIndex === steps.length - 1) && <div className="route-walk">
+      {arrived && <div className="route-walk">
         <strong>{destination.building}{destination.room && ` · ${destination.room}`}</strong>
         <p>About {Math.ceil(spot.walk)} min walk</p>
       </div>}
